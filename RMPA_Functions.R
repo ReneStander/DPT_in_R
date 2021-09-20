@@ -1,5 +1,8 @@
 # In this script we will define the functions to be used for the RMPA
+# Disclaimer: The code shown here is not optimised in any way yet. It will most likely be slow
 
+# This function initialises the RMPA
+# works on regular lattices
 RMPA_init <- function(im){
   org_img_array <- as.array(im)
   org_img_flatten <<- 
@@ -19,6 +22,8 @@ RMPA_init <- function(im){
   feature_table <<- tibble(id = numeric(0), size = numeric(0), value = numeric(0), type = character(0))
 }
 
+# This function merges the nodes that are of equal value and are neighbours
+# Will work on any type of data
 merge_nodes_new <- function(){
   # find nodes of equivalent value in WG
   dups <- duplicated(WG_nodes$Value)
@@ -80,14 +85,11 @@ merge_nodes_new <- function(){
       m = m + 1
       
     }
-    # update duplicates
-    # dups <- duplicated(WG_nodes$Value)
-    
-    #if(m > length(dups_vals)) break
   }
 }
 
-
+# This function creates the feature table
+# Will work on any data type
 create_feature_table <- function(){
   for(i in 1:nrow(WG_nodes)){
     diff <- WG_nodes$Value[i] - WG_nodes$Value
@@ -109,6 +111,8 @@ create_feature_table <- function(){
   }
 }
 
+#This function applies the Un operator on the data
+# Will work on any data type
 apply_Un <- function(n){
   to_smooth <- feature_table %>% filter(type == "p" & size == n)
   for(i in 1:nrow(to_smooth)){
@@ -138,6 +142,8 @@ apply_Un <- function(n){
   }
 }
 
+# This function applies the Ln operator to the data
+# Will work on any data type
 apply_Ln <- function(n){
   to_smooth <- feature_table %>% filter(type == "b" & size == n)
   for(i in 1:nrow(to_smooth)){
@@ -167,10 +173,14 @@ apply_Ln <- function(n){
   }
 }
 
+# This function deletes all the rows in the feature table
+# Will work on any data type
 clear_feat_table <- function(){
   feature_table <<- feature_table[-seq(1,nrow(feature_table),1),]
 }
 
+# This function implements the RMPA and iterates through the whole process automatically
+# Will only work on regular lattice
 RMPA_implement <- function(){
   # Step 1: Merge nodes
   merge_nodes_new()
@@ -194,6 +204,8 @@ RMPA_implement <- function(){
   }
 }
 
+# This function extracts certain pulses from the pulse graph
+# Will only work on grid images
 scale_selection <- function(im, scales, interval = FALSE, binary = FALSE){
   
   org_img_flatten_copy <- Matrix(org_img_flatten, sparse = TRUE)
@@ -246,3 +258,117 @@ scale_selection <- function(im, scales, interval = FALSE, binary = FALSE){
   
   return(as.im(array_reshape(as.array(org_img_flatten_copy), dim = dim(im))))
 }
+
+# This function initialises the RMPA when you have lattice data and are using the 
+# sf package
+RMPA_init_lattice <- function(data, attr = NULL, neighbours){
+  WG_nodes <<- tibble(id = 1:nrow(data), Value = data[,attr], Scale = 1)
+  
+  edgelist <- get.edgelist(graph.adjacency(neighbours))
+  WG_edges <<- tibble(from = edgelist[,1], to = edgelist[,2])
+  
+  PG_nodes <<- tibble(id = WG_nodes$id, scale = WG_nodes$id, value = 0)
+  
+  PG_edges <<- tibble(from = numeric(0), to = numeric(0))
+  
+  WG_PG_edge <<- tibble(from = WG_nodes$id, to = PG_nodes$scale)
+  
+  feature_table <<- tibble(id = numeric(0), size = numeric(0), value = numeric(0), type = character(0))
+}
+
+# This function implements the RMPA and iterates through the whole process automatically
+# Will only work on irregular lattice
+RMPA_implement_lattice <- function(){
+  # Step 1: Merge nodes
+  merge_nodes_new()
+  
+  # Step 2: Apply LULU operators from n = 1 up to n = N
+  N <- 27
+  for(n in 1:N){
+    nr <- nrow(WG_nodes)
+    if(nr > 1){
+      create_feature_table()
+      
+      if(sum(feature_table$size == n & feature_table$type == "b") > 0)  apply_Ln(n)
+      if(nrow(feature_table) > 0) clear_feat_table()
+      create_feature_table()
+      
+      if(sum(feature_table$size == n & feature_table$type == 'p') > 0)  apply_Un(n)
+      merge_nodes_new()
+      if(nrow(feature_table) > 0) clear_feat_table()
+      
+    }
+  }
+}
+
+# This function initialises the RMPA when you have lattice data from the sp package
+RMPA_init_lattice_sp <- function(data, attr = NULL, neighbours){
+  
+  WG_nodes <<- tibble(id = 1:nrow(data), Value = data[[attr]], Scale = 1)
+  
+  edgelist <- get.edgelist(graph.adjacency(neighbours))
+  WG_edges <<- tibble(from = edgelist[,1], to = edgelist[,2])
+  
+  PG_nodes <<- tibble(id = WG_nodes$id, scale = WG_nodes$id, value = 0)
+  
+  PG_edges <<- tibble(from = numeric(0), to = numeric(0))
+  
+  WG_PG_edge <<- tibble(from = WG_nodes$id, to = PG_nodes$scale)
+  
+  feature_table <<- tibble(id = numeric(0), size = numeric(0), value = numeric(0), type = character(0))
+}
+
+# This function extracts certain pulses from the pulse graph
+# Will only work on lattice data
+scale_selection_lattice <- function(lat_dat, scales, interval = FALSE, binary = FALSE){
+  
+  lat_dat$pulses <- rep(0, nrow(lat_dat))
+  
+  if(interval == FALSE){
+    PG_nodes_extracted <- PG_nodes %>% filter(scale %in% scales & value !=0)
+    
+    for(i in 1:nrow(PG_nodes_extracted)){
+      d <- as.numeric(PG_nodes_extracted$id[i])
+      if(binary == FALSE){
+        lat_dat$pulses[PG_edges$from[which(PG_edges$to == d)]] <- PG_nodes_extracted$value[i]
+      } else{
+        lat_dat$pulses[PG_edges$from[which(PG_edges$to == d)]] <- 1
+      }
+    }
+    
+  } else{
+    PG_nodes_extracted <- PG_nodes %>% filter(scale >= scales[1] & scale <= scales[2]  & value !=0)
+    d_scales <- seq(scales[1],scales[2],1)
+    for(i in 1:length(d_scales)){
+      
+      pulse <- PG_nodes_extracted %>% filter(scale == d_scales[i])
+      
+      for(j in 1:nrow(pulse)){
+        d <- as.numeric(pulse$id[j])
+        dd <- PG_edges$from[which(PG_edges$to == d)]
+        
+        if(binary == FALSE){
+          lat_dat$pulses[dd] <- lat_dat$pulses[dd] + pulse$value[j]
+        } else{
+          if(length(dd) > 1){
+            for(k in 1:length(dd)){
+              if(lat_dat$pulses[dd[k]] != 1){
+                lat_dat$pulses[dd[k]] <- 1
+              }
+            }
+          } else{
+            if(lat_dat$pulses[dd] != 1){
+              lat_dat$pulses[dd] <- 1
+            }
+          }
+          
+        }
+      }
+      
+    }
+    
+  }
+  
+  return(lat_dat)
+}
+
