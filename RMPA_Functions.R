@@ -2,15 +2,26 @@
 # Disclaimer: The code shown here is not optimised in any way yet. It will most likely be slow
 
 # This function initialises the RMPA
-# works on regular lattices
-RMPA_init <- function(im){
-  org_img_array <- as.array(im)
-  org_img_flatten <<- 
-    array_reshape(org_img_array, dim = cbind(1,dim(org_img_array)[1]*dim(org_img_array)[2]))
+# works on any data type
+RMPA_init <- function(data, attr = NULL, neighbours){
+  if(sum(class(data) == "im")==1){
+    org_img_array <- as.array(data)
+    org_img_flatten <<- 
+      array_reshape(org_img_array, dim = cbind(1,dim(org_img_array)[1]*dim(org_img_array)[2]))
+    WG_nodes <<- tibble(id = 1:length(org_img_flatten), Value = t(org_img_flatten), Scale = 1)
+  }else if(sum(class(data) == c("sf", "data.frame"))==2){
+    data2 <- as.data.frame(data)
+    WG_nodes <<- tibble(id = 1:nrow(data2), Value = data2[,attr], Scale = 1)
+  }else if(class(data) == "SpatialPolygonsDataFrame"){
+    WG_nodes <<- tibble(id = 1:nrow(data), Value = data[[attr]], Scale = 1)
+  }else{
+    warning('Ensure you are using the correct data type!!')
+    break
+  }
   
-  WG_nodes <<- tibble(id = 1:length(org_img_flatten), Value = t(org_img_flatten), Scale = 1)
+  N <<- nrow(WG_nodes)
   
-  edgelist <- get.edgelist(graph.adjacency(neigh_sparse))
+  edgelist <- get.edgelist(graph.adjacency(neighbours))
   WG_edges <<- tibble(from = edgelist[,1], to = edgelist[,2])
   
   PG_nodes <<- tibble(id = WG_nodes$id, scale = WG_nodes$id, value = 0)
@@ -24,7 +35,7 @@ RMPA_init <- function(im){
 
 # This function merges the nodes that are of equal value and are neighbours
 # Will work on any type of data
-merge_nodes_new <- function(){
+merge_nodes <- function(){
   # find nodes of equivalent value in WG
   dups <- duplicated(WG_nodes$Value)
   dups_vals <- unique(WG_nodes$Value[dups])
@@ -183,10 +194,9 @@ clear_feat_table <- function(){
 # Will only work on regular lattice
 RMPA_implement <- function(){
   # Step 1: Merge nodes
-  merge_nodes_new()
+  merge_nodes()
   
   # Step 2: Apply LULU operators from n = 1 up to n = N
-  N <- length(org_img_flatten)
   for(n in 1:N){
     nr <- nrow(WG_nodes)
     if(nr > 1){
@@ -197,7 +207,7 @@ RMPA_implement <- function(){
       create_feature_table()
       
       if(sum(feature_table$size == n & feature_table$type == 'p') > 0)  apply_Un(n)
-      merge_nodes_new()
+      merge_nodes()
       if(nrow(feature_table) > 0) clear_feat_table()
       
     }
@@ -259,64 +269,6 @@ scale_selection <- function(im, scales, interval = FALSE, binary = FALSE){
   return(as.im(array_reshape(as.array(org_img_flatten_copy), dim = dim(im))))
 }
 
-# This function initialises the RMPA when you have lattice data and are using the 
-# sf package
-RMPA_init_lattice <- function(data, attr = NULL, neighbours){
-  WG_nodes <<- tibble(id = 1:nrow(data), Value = data[,attr], Scale = 1)
-  
-  edgelist <- get.edgelist(graph.adjacency(neighbours))
-  WG_edges <<- tibble(from = edgelist[,1], to = edgelist[,2])
-  
-  PG_nodes <<- tibble(id = WG_nodes$id, scale = WG_nodes$id, value = 0)
-  
-  PG_edges <<- tibble(from = numeric(0), to = numeric(0))
-  
-  WG_PG_edge <<- tibble(from = WG_nodes$id, to = PG_nodes$scale)
-  
-  feature_table <<- tibble(id = numeric(0), size = numeric(0), value = numeric(0), type = character(0))
-}
-
-# This function implements the RMPA and iterates through the whole process automatically
-# Will only work on irregular lattice
-RMPA_implement_lattice <- function(){
-  # Step 1: Merge nodes
-  merge_nodes_new()
-  
-  # Step 2: Apply LULU operators from n = 1 up to n = N
-  N <- 27
-  for(n in 1:N){
-    nr <- nrow(WG_nodes)
-    if(nr > 1){
-      create_feature_table()
-      
-      if(sum(feature_table$size == n & feature_table$type == "b") > 0)  apply_Ln(n)
-      if(nrow(feature_table) > 0) clear_feat_table()
-      create_feature_table()
-      
-      if(sum(feature_table$size == n & feature_table$type == 'p') > 0)  apply_Un(n)
-      merge_nodes_new()
-      if(nrow(feature_table) > 0) clear_feat_table()
-      
-    }
-  }
-}
-
-# This function initialises the RMPA when you have lattice data from the sp package
-RMPA_init_lattice_sp <- function(data, attr = NULL, neighbours){
-  
-  WG_nodes <<- tibble(id = 1:nrow(data), Value = data[[attr]], Scale = 1)
-  
-  edgelist <- get.edgelist(graph.adjacency(neighbours))
-  WG_edges <<- tibble(from = edgelist[,1], to = edgelist[,2])
-  
-  PG_nodes <<- tibble(id = WG_nodes$id, scale = WG_nodes$id, value = 0)
-  
-  PG_edges <<- tibble(from = numeric(0), to = numeric(0))
-  
-  WG_PG_edge <<- tibble(from = WG_nodes$id, to = PG_nodes$scale)
-  
-  feature_table <<- tibble(id = numeric(0), size = numeric(0), value = numeric(0), type = character(0))
-}
 
 # This function extracts certain pulses from the pulse graph
 # Will only work on lattice data

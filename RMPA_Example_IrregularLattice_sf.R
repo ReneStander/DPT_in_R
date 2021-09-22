@@ -35,10 +35,10 @@ for(i in 1:d){
 }
 
 # Initialise the RMPA
-RMPA_init_lattice(data = as.data.frame(nc.use), attr = "BIR74", neighbours = neigh_sparse)
+RMPA_init(data = nc.use, attr = "BIR74", neighbours = neigh_sparse)
 
 # Implement the RMPA
-RMPA_implement_lattice()
+RMPA_implement()
 
 
 # Extract certain scales and plot them
